@@ -1,0 +1,69 @@
+name: Publish SilverBridge Update
+
+on:
+  workflow_dispatch:
+    inputs:
+      apk_url:
+        description: HTTPS URL of the verified APK
+        required: true
+        type: string
+      meta_url:
+        description: HTTPS URL of update.json
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download candidate update
+        env:
+          APK_URL: ${{ inputs.apk_url }}
+          META_URL: ${{ inputs.meta_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$APK_URL" in https://*) ;; *) echo "APK URL must use HTTPS" >&2; exit 1;; esac
+          case "$META_URL" in https://*) ;; *) echo "Metadata URL must use HTTPS" >&2; exit 1;; esac
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --max-time 180 "$APK_URL" -o SilverBridge-latest.apk
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --max-time 60 "$META_URL" -o update.json
+
+      - name: Verify metadata and APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+          const m = JSON.parse(fs.readFileSync('update.json', 'utf8'));
+          if (!Number.isSafeInteger(m.versionCode) || m.versionCode <= 0) throw new Error('invalid versionCode');
+          if (typeof m.versionName !== 'string' || !m.versionName || m.versionName.length > 80) throw new Error('invalid versionName');
+          if (typeof m.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(m.sha256)) throw new Error('invalid sha256');
+          if (!Number.isSafeInteger(m.size) || m.size <= 0 || m.size > 157286400) throw new Error('invalid size');
+          if (m.apkPath !== '/v1/app/update.apk') throw new Error('invalid apkPath');
+          NODE
+          EXPECTED="$(node -e 'const m=require("./update.json"); process.stdout.write(m.sha256)')"
+          ACTUAL="$(sha256sum SilverBridge-latest.apk | awk '{print $1}')"
+          EXPECTED_SIZE="$(node -e 'const m=require("./update.json"); process.stdout.write(String(m.size))')"
+          ACTUAL_SIZE="$(stat -c '%s' SilverBridge-latest.apk)"
+          test "$EXPECTED" = "$ACTUAL"
+          test "$EXPECTED_SIZE" = "$ACTUAL_SIZE"
+
+      - name: Publish channel files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'SilverBridge Update Publisher'
+          git config user.email 'noreply@users.noreply.github.com'
+          git add SilverBridge-latest.apk update.json
+          if git diff --cached --quiet; then
+            echo 'Update channel already current'
+            exit 0
+          fi
+          VERSION="$(node -e 'const m=require("./update.json"); process.stdout.write(m.versionName)')"
+          git commit -m "Publish SilverBridge ${VERSION}"
+          git push
