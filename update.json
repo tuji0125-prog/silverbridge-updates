@@ -1,7 +1,7 @@
 {
-  "versionCode": 6,
-  "versionName": "0.2.6-phone",
-  "sha256": "4a9ff504c111c3384be6c8e26745466b25fdb5cfef1e8074d9f616c60aeace43",
-  "size": 2290532,
+  "versionCode": 7,
+  "versionName": "0.2.7-phone",
+  "sha256": "5abbcd3a3504acb69c0487d41ac90bccdefd92f6274aa6f12c0c30000e287c6c",
+  "size": 2290536,
   "apkPath": "/v1/app/update.apk"
 }
